@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { Paper, SearchHistoryItem } from '../types';
-import { streamSearch, getSearchHistory, getSearchResults } from '../api/search';
+import { streamSearch, getSearchHistory, getSearchResults, deleteSearchHistory } from '../api/search';
 import { summarizeAll } from '../api/papers';
 
 interface SearchState {
@@ -39,12 +39,12 @@ export const useSearchStore = create<SearchState>((set, get) => ({
   minYear: currentYear - 2,
   maxYear: currentYear,
   minIF: 0,
-  maxResults: 50,
+  maxResults: 20,
   results: [],
   searchId: null,
   isLoading: false,
   isSummarizing: false,
-  autoSummarize: false,
+  autoSummarize: true,
   statusMessage: '',
   error: null,
   history: [],
@@ -111,8 +111,10 @@ export const useSearchStore = create<SearchState>((set, get) => ({
   },
 
   deleteHistory: async (id: number) => {
-    // Only remove from display list, keep in database
     set((state) => ({ history: state.history.filter((h) => h.id !== id) }));
+    try {
+      await deleteSearchHistory(id);
+    } catch { /* silent */ }
   },
 
   loadSearchResults: async (id: number) => {

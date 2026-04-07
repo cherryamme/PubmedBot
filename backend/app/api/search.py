@@ -254,7 +254,7 @@ async def do_search(req: SearchRequest, db: AsyncSession = Depends(get_db)):
 
 @router.get("/history", response_model=list[SearchHistoryItem])
 async def get_search_history(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(SearchHistory).order_by(SearchHistory.created_at.desc()).limit(50))
+    result = await db.execute(select(SearchHistory).order_by(SearchHistory.created_at.desc()).limit(20))
     return [SearchHistoryItem.model_validate(s) for s in result.scalars()]
 
 
