@@ -114,6 +114,12 @@ async def stream_chat(
         summary_section=summary_section,
     )
 
+    logger.info(
+        f"stream_chat: system prompt length={len(system_msg)} chars, "
+        f"fulltext_included={'yes' if fulltext else 'no'}, "
+        f"history_turns={len(chat_history)}"
+    )
+
     messages = [{"role": "system", "content": system_msg}]
     messages.extend(chat_history)
     messages.append({"role": "user", "content": user_message})

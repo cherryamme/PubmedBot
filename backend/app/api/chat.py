@@ -12,7 +12,9 @@ from sqlalchemy.orm import selectinload
 from ..database import get_db
 from ..models.paper import Paper
 from ..models.chat import ChatSession, ChatMessage
+from ..models.summary import FulltextCache
 from ..schemas.chat import ChatRequest, ChatHistoryResponse, ChatMessageSchema
+from ..services.fulltext import get_fulltext
 from ..services.llm import stream_chat
 from ..utils.text_processor import chunk_fulltext_sections, build_context_from_sections
 
@@ -65,7 +67,32 @@ async def chat_with_paper(
 
     chat_history = [{"role": m.role, "content": m.content} for m in msgs[:-1]]  # Exclude current
 
-    # Prepare fulltext
+    # Prepare fulltext: use cache if available, otherwise fetch on demand
+    # (same behavior as /analyze-fulltext) so that Q&A has the full paper as context.
+    if not paper.fulltext_cache:
+        try:
+            result = await get_fulltext(paper.pmid, paper.pmcid, paper.doi)
+            if result.available and result.content:
+                cache = FulltextCache(
+                    paper_id=paper.id,
+                    source=result.source,
+                    content=result.content,
+                    content_type=result.content_type,
+                    oa_url=result.oa_url,
+                )
+                db.add(cache)
+                await db.commit()
+                await db.refresh(paper, ["fulltext_cache"])
+                logger.info(
+                    f"Chat: fetched fulltext for paper {paper.id} from {result.source}"
+                )
+            else:
+                logger.info(
+                    f"Chat: no fulltext available for paper {paper.id}, falling back to abstract"
+                )
+        except Exception as e:
+            logger.warning(f"Chat: fulltext fetch failed for paper {paper.id}: {e}")
+
     fulltext = None
     if paper.fulltext_cache and paper.fulltext_cache.content:
         if paper.fulltext_cache.content_type == "json":
@@ -77,6 +104,12 @@ async def chat_with_paper(
                 fulltext = paper.fulltext_cache.content
         else:
             fulltext = paper.fulltext_cache.content
+
+    logger.info(
+        f"Chat: paper {paper.id} context — abstract={'yes' if paper.abstract else 'no'}, "
+        f"fulltext={'yes (%d chars)' % len(fulltext) if fulltext else 'no'}, "
+        f"summary={'yes' if paper.summary else 'no'}"
+    )
 
     summary_cn = paper.summary.summary_cn if paper.summary else None
     session_id = session.id
