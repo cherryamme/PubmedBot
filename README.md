@@ -1,7 +1,10 @@
 # PubMed-Bot
 
 智能 PubMed 文献检索与整理工具。输入关键词自动检索文献、筛选影响因子、AI 生成结构化摘要，支持全文深度分析、交互式问答和 Zotero 导出。
-
+## 搜索主页
+![alt text](static/pubmedbot-main.png)
+## 文献页面
+![item](static/pubmedbot-item.png)
 ## 功能特性
 
 **文献检索**
