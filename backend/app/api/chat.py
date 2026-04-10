@@ -67,12 +67,20 @@ async def chat_with_paper(
 
     chat_history = [{"role": m.role, "content": m.content} for m in msgs[:-1]]  # Exclude current
 
-    # Prepare fulltext: use cache if available, otherwise fetch on demand
-    # (same behavior as /analyze-fulltext) so that Q&A has the full paper as context.
-    if not paper.fulltext_cache:
+    # Prepare fulltext: auto-fetch if not cached or cached without content
+    has_usable_cache = (
+        paper.fulltext_cache
+        and paper.fulltext_cache.content
+        and paper.fulltext_cache.content_type != "url"
+    )
+    if not has_usable_cache:
         try:
             result = await get_fulltext(paper.pmid, paper.pmcid, paper.doi)
             if result.available and result.content:
+                # Delete old empty cache entry if exists
+                if paper.fulltext_cache:
+                    await db.delete(paper.fulltext_cache)
+                    await db.flush()
                 cache = FulltextCache(
                     paper_id=paper.id,
                     source=result.source,
@@ -86,10 +94,6 @@ async def chat_with_paper(
                 logger.info(
                     f"Chat: fetched fulltext for paper {paper.id} from {result.source}"
                 )
-            else:
-                logger.info(
-                    f"Chat: no fulltext available for paper {paper.id}, falling back to abstract"
-                )
         except Exception as e:
             logger.warning(f"Chat: fulltext fetch failed for paper {paper.id}: {e}")
 
@@ -102,7 +106,7 @@ async def chat_with_paper(
                 fulltext = build_context_from_sections(sections)
             except json.JSONDecodeError:
                 fulltext = paper.fulltext_cache.content
-        else:
+        elif paper.fulltext_cache.content_type != "url":
             fulltext = paper.fulltext_cache.content
 
     logger.info(

@@ -98,31 +98,43 @@ async def stream_chat(
     """Stream a chat response about a paper."""
     client = _get_client()
 
-    abstract_section = f"摘要：\n{abstract}" if abstract else "（无摘要）"
-    fulltext_section = ""
+    # Build paper context (put in user message, not system prompt —
+    # many models ignore or truncate long system prompts)
+    context_parts = [f"论文标题：{title}"]
+    if journal:
+        context_parts.append(f"期刊：{journal}")
+    if year:
+        context_parts.append(f"年份：{year}")
+    if abstract:
+        context_parts.append(f"\n摘要：\n{abstract}")
     if fulltext:
         truncated = truncate_to_tokens(fulltext, 8000)
-        fulltext_section = f"全文内容（节选）：\n{truncated}"
-    summary_section = f"AI摘要整理：\n{summary_cn}" if summary_cn else ""
+        context_parts.append(f"\n全文内容（节选）：\n{truncated}")
+    if summary_cn:
+        context_parts.append(f"\nAI摘要整理：\n{summary_cn}")
 
-    system_msg = settings.llm_prompt_chat.format(
-        title=title,
-        journal=journal or "未知",
-        year=year or "未知",
-        abstract_section=abstract_section,
-        fulltext_section=fulltext_section,
-        summary_section=summary_section,
-    )
+    paper_context = "\n".join(context_parts)
 
     logger.info(
-        f"stream_chat: system prompt length={len(system_msg)} chars, "
+        f"stream_chat: context length={len(paper_context)} chars, "
         f"fulltext_included={'yes' if fulltext else 'no'}, "
         f"history_turns={len(chat_history)}"
     )
 
-    messages = [{"role": "system", "content": system_msg}]
-    messages.extend(chat_history)
-    messages.append({"role": "user", "content": user_message})
+    messages = [{"role": "system", "content": settings.llm_prompt_chat}]
+
+    # First turn: inject paper context + question together
+    # Subsequent turns: re-inject context so the model always has it
+    context_msg = f"以下是需要分析的论文内容：\n\n{paper_context}\n\n请根据以上论文内容回答我的问题：{user_message}"
+
+    if chat_history:
+        # Prepend context as first exchange so model sees it before history
+        messages.append({"role": "user", "content": f"以下是需要分析的论文内容：\n\n{paper_context}\n\n我会基于这篇论文向你提问。"})
+        messages.append({"role": "assistant", "content": "好的，我已仔细阅读了这篇论文的内容，请问您有什么问题？"})
+        messages.extend(chat_history)
+        messages.append({"role": "user", "content": user_message})
+    else:
+        messages.append({"role": "user", "content": context_msg})
 
     response = await client.chat.completions.create(
         model=settings.llm_model,
